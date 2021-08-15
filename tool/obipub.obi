@@ -1,7 +1,6 @@
 toml := mod("../lib/toml.obi");
 json := mod("../lib/json.obi");
 
-BASE_URI := "http://localhost:8080";
 API_HOST := "obi.pub";
 API_URI := "https://" + API_HOST;
 
@@ -53,7 +52,7 @@ fun fetch_deps(callback) {
         };
 
         version = trim(version, "\"");
-        archive_uri := BASE_URI + "/api/packages/" + name + "/versions/" + version + "/archive.tar.gz";
+        archive_uri := API_URI + "/api/packages/" + name + "/versions/" + version + "/archive.tar.gz";
         print("fetching " + archive_uri);
         sent = sent + 1;
         fetch(archive_uri, "GET", nil) fun(data, info) {
