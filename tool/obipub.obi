@@ -130,5 +130,5 @@ fun renderPackageInfo(packageInfo) {
             filepath := "./.obi_tool/package_resolution.json";
             writefile(filepath, text_encode(content));
         };
-    }
+    };
 }

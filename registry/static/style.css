@@ -1,0 +1,29 @@
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+}
+div {
+    margin: 0;
+    padding: 0;
+}
+body {
+    font-family: sans-serif;
+}
+
+.hero-container {
+    margin-top: 3em;
+    margin-bottom: 3em;
+}
+.content-container {
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 0 1em;
+}
+a {
+    text-decoration: none;
+    color: #C59702;
+}
+a:hover {
+    color: #A68003;
+}

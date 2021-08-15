@@ -1,0 +1,45 @@
+Markup := mod("../markup.obi").Markup;
+
+pub fun getMarkup(package) {
+    m := Markup();
+
+    m.html([]) {
+        m.head([]) {
+            m.link([rel = "stylesheet", href = "/style.css"], nil);
+        };
+        m.body([]) {
+            m.div([ class = "content-container" ]) {
+                m.h3([]) {
+                    m.a([ href = "/" ]) {
+                        m.text("obi.pub");
+                    };
+                };
+                m.div([ class = "hero-container" ]) {
+                    m.h1([]) {
+                        m.text(package.name);
+                    };
+                    m.p([]) {
+                        m.text("Latest Version: " + str(package.latest.version));
+                    };
+                };
+                m.div([ class = "package-list" ]) {
+                    m.h3([]) {
+                        m.text("Versions");
+                    };
+                    m.ul([]) {
+                        i := 0;
+                        versionlen := len(package.versions);
+                        while() { i < versionlen; } {
+                            m.li([]) {
+                                m.text(package.versions.(i).version);
+                            };
+                            i = i + 1;
+                        };
+                    };
+                };
+            };
+        };
+    };
+
+    return m.render();
+}

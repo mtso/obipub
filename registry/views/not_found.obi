@@ -1,0 +1,29 @@
+Markup := mod("../markup.obi").Markup;
+
+pub fun getMarkup() {
+    m := Markup();
+
+    m.html([]) {
+        m.head([]) {
+            m.link([rel = "stylesheet", href = "/style.css"], nil);
+        };
+        m.body([]) {
+            m.div([ class = "content-container" ]) {
+                m.h3([]) {
+                    m.a([ href = "/" ]) {
+                        m.text("obi.pub");
+                    };
+                };
+                m.h1([]) {
+                    m.text("Page not found, ");
+                    m.a([ href = "/" ]) {
+                        m.text("back to index");
+                    };
+                    m.text(".");
+                };
+            };
+        };
+    };
+
+    return m.render();
+}

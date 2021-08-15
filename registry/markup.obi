@@ -1,0 +1,91 @@
+fun renderAttrs(attrs) {
+    attrs = attrs or [];
+    i := 0;
+    k := keys(attrs);
+    klen := len(attrs);
+    attrStr := "";
+    while() { i < klen; } {
+        attrStr = attrStr + k.(i) + "=\"" + str(attrs.(k.(i))) + "\" ";
+        i = i + 1;
+    };
+    return attrStr;
+}
+pub fun Markup() {
+    _buf := "";
+    noop := fun() {};
+
+    fun tag(name, attrs, children) {
+        children = children or noop;
+        attrs = attrs or [];
+        _buf = _buf + "<" + name + " " + renderAttrs(attrs) + ">";
+        children();
+        _buf = _buf + "</" + name + ">\n";
+    }
+
+    return [
+        // special
+        text = fun(string) {
+            _buf = _buf + str(string);
+        },
+
+        // html tags
+        html = fun(attrs, children) {
+            children = children or noop;
+            attrs = attrs or [];
+            attrs.lang = attrs.("lang") or "en";
+
+            _buf = _buf + "<!DOCTYPE html><html " + renderAttrs(attrs) + ">";
+            children();
+            _buf = _buf + "</html>";
+        },
+        head = fun(attrs, children) {
+            return tag("head", attrs, children);
+        },
+        link = fun(attrs, children) {
+            return tag("link", attrs, children);
+        },
+        body = fun(attrs, children) {
+            return tag("body", attrs, children);
+        },
+        div = fun(attrs, children) {
+            return tag("div", attrs, children);
+        },
+        p = fun(attrs, children) {
+            return tag("p", attrs, children);
+        },
+        a = fun(attrs, children) {
+            children = children or noop;
+            attrs = attrs or [];
+            _buf = _buf + "<a " + renderAttrs(attrs) + ">";
+            children();
+            _buf = _buf + "</a>";
+        },
+        h1 = fun(attrs, children) {
+            return tag("h1", attrs, children);
+        },
+        h2 = fun(attrs, children) {
+            return tag("h2", attrs, children);
+        },
+        h3 = fun(attrs, children) {
+            return tag("h3", attrs, children);
+        },
+        h4 = fun(attrs, children) {
+            return tag("h4", attrs, children);
+        },
+        h5 = fun(attrs, children) {
+            return tag("h5", attrs, children);
+        },
+        h6 = fun(attrs, children) {
+            return tag("h6", attrs, children);
+        },
+        ul = fun(attrs, children) {
+            return tag("ul", attrs, children);
+        },
+        li = fun(attrs, children) {
+            return tag("li", attrs, children);
+        },
+        render = fun() {
+            return _buf;
+        },
+    ];
+}

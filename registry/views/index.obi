@@ -1,0 +1,49 @@
+Markup := mod("../markup.obi").Markup;
+
+pub fun getMarkup(packageNames) {
+    m := Markup();
+
+    m.html([]) {
+        m.head([]) {
+            m.link([rel = "stylesheet", href = "/style.css"], nil);
+        };
+        m.body([]) {
+            m.div([ class = "content-container" ]) {
+                m.div([ class = "hero-container" ]) {
+                    m.h1([]) {
+                        m.a([ href = "/" ]) {
+                            m.text("obi.pub");
+                        };
+                    };
+                    m.p([]) {
+                        m.text("The package repository for ");
+                        m.a([ href = "https://obilang.org" ]) {
+                            m.text("Obi");
+                        };
+                        m.text(" libraries.");
+                    };
+                };
+                m.div([ class = "package-list" ]) {
+                    m.h3([]) {
+                        m.text("Available Packages");
+                    };
+                    m.ul([]) {
+                        i := 0;
+                        namelen := len(packageNames);
+                        while() { i < namelen; } {
+                            m.li([]) {
+                                name := packageNames.(i);
+                                m.a([ href = "/packages/" + str(name) ]) {
+                                    m.text(name);
+                                };
+                            };
+                            i = i + 1;
+                        };
+                    };
+                };
+            };
+        };
+    };
+
+    return m.render();
+}
