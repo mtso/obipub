@@ -1,0 +1,135 @@
+toml := mod("../lib/toml.obi");
+json := mod("../lib/json.obi");
+
+BASE_URI := "http://localhost:8080";
+API_HOST := "obi.pub";
+API_URI := "https://" + API_HOST;
+
+fun trim(s, c) {
+    c = c or " ";
+    start := 0;
+    startI := nil;
+    end := strlen(s);
+    endI := nil;
+    while() { start < end and startI == nil; } {
+        match strslice(s, start, start + 1) == c {
+            true -> start = start + 1;
+            false -> startI = start;
+        };
+    };
+    while() { end > start and endI == nil; } {
+        match strslice(s, end - 1, end) == c {
+            true -> end = end - 1;
+            false -> endI = end;
+        };
+    };
+    return strslice(s, startI, endI);
+}
+
+fun fetch_deps(callback) {
+    obipubFile := readfile("./obipub.toml");
+    obipub := toml.parse_toml(obipubFile);
+    obiPackageInfo := [];
+
+    match dependencies := obipub.("dependencies") {
+        nil -> return;
+        _ -> ();
+    };
+
+    names := keys(dependencies);
+    cache_dir := process_env("HOME");
+    hosted_dir := cache_dir + "/.obipub-cache/hosted/" + API_HOST + "/";
+    tmp_dir := cache_dir + "/.obipub-cache/tmp/";
+    ensure_dir(tmp_dir);
+
+    i := 0;
+    sent := 0;
+    while() { i < len(names); } {
+        name := names.(i);
+        version := dependencies.(name);
+        match version == nil or name == nil {
+            true -> return i = i + 1;
+            _ -> ();
+        };
+
+        version = trim(version, "\"");
+        archive_uri := BASE_URI + "/api/packages/" + name + "/versions/" + version + "/archive.tar.gz";
+        print("fetching " + archive_uri);
+        sent = sent + 1;
+        fetch(archive_uri, "GET", nil) fun(data, info) {
+            match info.status {
+                200 -> ();
+                _ -> return;
+            };
+            destination_dir := hosted_dir + name + "-" + version + "/";
+            ensure_dir(destination_dir);
+            tmp_path := tmp_dir + filename(info.url);
+            writefile(tmp_path, data);
+
+            // extract
+            process_run(["tar", "-xf", tmp_path, "--directory", destination_dir]) fun(info) {
+                uid := name + "-" + version;
+                obiPackageInfo.(uid) = [
+                    name = name,
+                    version = version,
+                    archiveUri = destination_dir,
+                ];
+
+                sent = sent - 1;
+                match sent {
+                    0 -> callback(obiPackageInfo);
+                    _ -> ();
+                };
+            };
+        };
+        i = i + 1;
+    };
+}
+
+fun filename(path) {
+    pathlen := strlen(path);
+    start := pathlen;
+    filename := nil;
+    while() { start > 0 and filename == nil; } {
+        match (strslice(path, start - 1, start)) {
+            "/" -> return filename = strslice(path, start, pathlen);
+            _ -> start = start - 1;
+        };
+    };
+    return filename or path;
+}
+
+fun renderPackageInfo(packageInfo) {
+    fun sortPackages(packages) {
+        sortedKeys := list_sort(keys(packages));
+        keylen := len(sortedKeys);
+        arr := [];
+        i := 0;
+        while() { i < keylen; } {
+            arr.(i) = packages.(sortedKeys.(i));
+            i = i + 1;
+        };
+        return arr;
+    }
+    obj := [
+        configVersion = 1,
+        generatedAt = clock(),
+        generator = "obipub",
+        generatorVersion = "0.1.0",
+        packages = sortPackages(packageInfo),
+    ];
+    return json.stringify_pretty(obj, 2);
+}
+
+{
+    args := process_args();
+    command := args.(0);
+    match command {
+        "get" -> fetch_deps() fun(packageInfo) {
+            content := renderPackageInfo(packageInfo);
+            ensure_dir("./.obi_tool/");
+            filepath := "./.obi_tool/package_resolution.json";
+            writefile(filepath, text_encode(content));
+        };
+    }
+}

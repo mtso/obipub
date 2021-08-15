@@ -1,0 +1,138 @@
+json := mod("../lib/json.obi");
+
+pub fun DbResult(ok, value, error) {
+    return [ok = ok, value = value, error = error];
+}
+fun ok(value) {
+    return DbResult(true, value, nil);
+}
+fun error(reason) {
+    return DbResult(false, nil, reason);
+}
+
+pub fun packageExists(versions, version) {
+    i := 0;
+    verlen := len(versions);
+    exists := false;
+    while() { i < verlen and !exists; } {
+        check := versions.(i) or [];
+        match check.("versions") == version {
+            true -> exists = true;
+            _ -> ();
+        };
+        i = i + 1;
+    };
+    return exists;
+}
+
+pub fun makePackageDb(dataDir) {
+    return [
+        getPackage = fun(name, version) {
+            filepath := dataDir + "/index/" + name + ".json";
+            match (file_exists(filepath)) {
+                false -> return error("not_found");
+                _ -> ();
+            };
+
+            match (contents := readfile_bytes(filepath)) {
+                nil -> return error("not_found");
+                _ -> ();
+            };
+
+            match (packageInfo := json.parse(text_decode(contents))) {
+                nil -> {
+                    print("parse failure: " + str(filepath));
+                    return error("internal_error");
+                }
+                _ -> ();
+            };
+
+            match version {
+                "latest" -> {
+                    match (package := packageInfo.("latest")) {
+                        nil -> {
+                            print("package missing latest: " + str(name));
+                            return error("internal_error");
+                        }
+                        _ -> return ok(package);
+                    };
+                }
+                _ -> {
+                    match (package := packageInfo.(version)) {
+                        nil -> return error("not_found");
+                        _ -> return ok(package);
+                    };
+                }
+            };
+        },
+        listPackage = fun(name) {
+            filepath := dataDir + "/index/" + name + ".json";
+            match (file_exists(filepath)) {
+                false -> return error("not_found");
+                _ -> ();
+            };
+
+            match (contents := readfile_bytes(filepath)) {
+                nil -> {
+                    print("File not found: " + str(filepath));
+                    return error("not_found");
+                }
+                _ -> ();
+            };
+
+            match (packageInfo := json.parse(text_decode(contents))) {
+                nil -> {
+                    print("parse failure: " + str(filepath));
+                    return error("internal_error");
+                }
+                _ -> return ok(packageInfo);
+            };
+        },
+        storePackage = fun(name, version, info, isLatest) {
+            filepath := dataDir + "/index/" + name + ".json";
+            contents := match (file_exists(filepath)) {
+                true -> {
+                    match (contents := readfile_bytes(filepath)) {
+                        nil -> {
+                            print("file not found, creating new... " + str(filepath));
+                            [
+                                name = name,
+                                versions = [],
+                            ];
+                        }
+                        _ -> match (packageInfo := json.parse(text_decode(contents))) {
+                            nil -> {
+                                print("JSON parse failure, creating new..." + str(filepath));
+                                [
+                                    name = name,
+                                    versions = [],
+                                ];
+                            }
+                            _ -> packageInfo;
+                        };
+                    };
+                }
+                false -> [
+                    name = name,
+                    versions = [],
+                ];
+            };
+
+            versions := contents.("versions") or [];
+            verlen := len(versions);
+            match (exists := packageExists(versions, version)) {
+                true -> return error("version_exists");
+                false -> ();
+            };
+            
+            versions.(verlen) = info;
+            verlen = verlen + 1;
+            contents.versions = versions;
+            contents.latest = info;
+
+            contentStr := json.stringify(contents);
+            writefile(filepath, text_encode(contentStr));
+            ok(contents);
+        },
+    ];
+}

@@ -1,0 +1,220 @@
+fun HttpRequest(method, path) {
+    return [
+        method = method,
+        path = path,
+    ];
+}
+
+pub fun replaceAll(source, needle, with) {
+    needleLen := strlen(needle);
+    len := strlen(source);
+    start := 0;
+    end := 0;
+    result := "";
+
+    i := 0; while() { i < len - needleLen + 1; } {
+        potential := strslice(source, i, i + needleLen);
+        match (potential == needle) {
+            true -> {
+                result = result + strslice(source, start, end) + with;
+                start = i + needleLen; // skip over found
+                end = start;
+                i = i + needleLen - 1;
+            }
+            false -> end = end + 1;
+        };
+        i = i + 1;
+    };
+
+    return result + strslice(source, start, len);
+}
+
+fun split(source, needle) {
+    needleLen := strlen(needle);
+    len := strlen(source);
+    start := 0;
+    end := 0;
+    pieces := [];
+    pieceIdx := 0;
+
+    i := 0; while() { i < len - needleLen + 1; } {
+        potential := strslice(source, i, i + needleLen);
+        match (potential == needle) {
+            true -> {
+                pieces.(pieceIdx) = strslice(source, start, end);
+                pieceIdx = pieceIdx + 1;
+                start = i + needleLen; // skip over found
+                end = start;
+                i = i + needleLen - 1;
+            }
+            false -> end = end + 1;
+        };
+        i = i + 1;
+    };
+
+    pieces.(pieceIdx) = strslice(source, start, len);
+    return pieces;
+}
+
+fun fileExt(string) {
+    ext := nil;
+    i := strlen(string); while() { i > 0 and ext == nil; } {
+        match strslice(string, i - 1, i) == "." {
+            true -> ext = strslice(string, i - 1, strlen(string));
+            _ -> ();
+        };
+        i = i - 1;
+    };
+    return ext;
+}
+
+fun first(hay, needle) {
+    idx := nil;
+    i := 0; while() { i < strlen(hay) and idx == nil; } {
+        match strslice(hay, i, i + 1) == needle {
+            true -> idx = i;
+            _ -> ();
+        };
+        i = i + 1;
+    };
+    return idx;
+}
+
+fun parse_http(data) {
+    lines := split(data, "\n");
+    line0 := lines.(0);
+    meta := split(line0, " ");
+    method := meta.(0);
+    path := meta.(1);
+    return HttpRequest(method, path);
+}
+
+pub fun makeRelative(path) {
+    prevLen := strlen(path);
+    result := replaceAll(path, "..", ".");
+    while() {
+        wasDiff := strlen(result) != prevLen;
+        prevLen = strlen(result);
+        wasDiff;
+    } {
+        result = replaceAll(result, "..", ".");
+        result = replaceAll(result, "/./", "/");
+    };
+    return result;
+}
+
+fun isDirName(path) {
+    pathlen := strlen(path);
+    lastChar := strslice(path, pathlen - 1, pathlen);
+    return match lastChar {
+        "/" -> true;
+        _ -> match (fileExt(path)) {
+            nil -> true;
+            _ -> false;
+        };
+    };
+}
+
+fun match_path(route, path) {
+    routePieces := split(route, "/");
+    pathPieces := split(path, "/");
+    i := 0;
+    isMatch := true;
+    params := [];
+    pathlen := len(pathPieces);
+    match len(routePieces) == pathlen {
+        false -> return nil;
+        _ -> ();
+    };
+    while() { i < pathlen and isMatch; } {
+        routePiece := routePieces.(i);
+        pathPiece := pathPieces.(i);
+        match routePiece {
+            nil -> return isMatch = false;
+            _ -> ();
+        };
+        match (strslice(routePiece, 0, 1)) {
+            ":" -> {
+                key := strslice(routePiece, 1, strlen(routePiece));
+                params.(key) = pathPiece;
+            }
+            _ -> isMatch = isMatch and routePiece == pathPiece;
+        };
+        i = i + 1;
+    };
+    return match isMatch {
+        true -> params;
+        false -> nil;
+    };
+}
+
+fun renderHeaders(headers) {
+    headerKeys := keys(headers);
+    headerString := "";
+    keylen := len(headerKeys);
+    i := 0;
+    while() { i < keylen; } {
+        k := headerKeys.(i);
+        headerString = headerString + str(k) + ": " + str(headers.(k)) + "\n";
+        i = i + 1;
+    };
+    return headerString;
+}
+
+pub fun HttpServer() {
+    return self := [
+        routes = [],
+        routeLen = 0,
+        defaultHandler = fun(info, respond) {
+            message := "Path not found: " + info.path;
+            respond(404, [], text_encode(message));
+        },
+        addRoute = fun(path, handler) {
+            self.routes.(self.routeLen) = [path, handler];
+            self.routeLen = self.routeLen + 1;
+        },
+        setDefaultHandler = fun(handler) {
+            self.defaultHandler = handler;
+        },
+        getHandler = fun(path) {
+            i := 0;
+            handler := nil;
+            while() { i < self.routeLen and handler == nil; } {
+                info := self.routes.(i);
+                route := info.(0);
+                routeHandler := info.(1);
+                params := match_path(route, path);
+                match params {
+                    nil -> ();
+                    _ -> handler = fun(info, respond) {
+                        info.params = params;
+                        routeHandler(info, respond);
+                    };
+                };
+                i = i + 1;
+            };
+            return handler;
+        },
+        listen = fun(port) {
+            listen_tcp("0.0.0.0", port) fun(connection) {
+                connection.on_data() fun(data) {
+                    info := parse_http(text_decode(data));
+                    path := info.path;
+                    handler := self.getHandler(path);
+                    match handler {
+                        nil -> handler = self.defaultHandler;
+                        _ -> ();
+                    };
+
+                    handler(info, fun(status, headers, body) {
+                        headers.("Content-Length") = str(len(body));
+                        headers.("Content-Type") = headers.("Content-Type") or headers.("content-type") or "text/plain";
+                        head := "HTTP/1.1 " + str(status) + "\n" + renderHeaders(headers) + "\n";
+                        connection.write(bytes_concat(text_encode(head), body));
+                        connection.close();
+                    });
+                };
+            };
+        },
+    ];
+}

@@ -1,0 +1,75 @@
+http := mod("./http.obi");
+db := mod("./db.obi");
+json := mod("../lib/json.obi");
+
+server := http.HttpServer();
+
+// FIXME(mtso): make this an environment variable!
+// DATA_DIR := process_env("DATA_DIR");
+DATA_DIR := "/mnt/volume_sfo3_01";
+PORT := 8080;
+
+match (file_exists(DATA_DIR)) {
+    nil -> {
+        print("Expect DATA_DIR to point to a valid filepath. DATA_DIR=" + str(DATA_DIR));
+        process_exit(1);
+    }
+    _ -> ();
+};
+
+packageDb := db.makePackageDb(DATA_DIR);
+
+server.addRoute("/packages/:filename") fun(request, respond) {
+    filename := http.makeRelative(request.params.filename);
+    match (file := readfile_bytes(DATA_DIR + "/packages/" + filename)) {
+        nil -> return respond(404, [Content-Type = "application/json"], text_encode("{\"error\":\"not_found\"}"));
+        _ -> ();
+    };
+    headers := [
+        Content-Type = "application/tar",
+    ];
+    respond(200, headers, file);
+};
+
+server.addRoute("/api/packages/:name/versions/:version/archive.tar.gz") fun(request, respond) {
+    name := request.params.name;
+    version := request.params.version;
+    filename := http.makeRelative(name + "-" + version + ".tar.gz");
+    package := readfile_bytes("./packages/" + filename);
+    headers := [
+        Content-Type = "text/plain; charset=utf-8",
+        Location = "/packages/" + filename,
+        x-frame-options = "SAMEORIGIN",
+    ];
+    respond(303, headers, array_make(0));
+};
+
+server.addRoute("/api/packages/:name") fun(request, respond) {
+    result := packageDb.listPackage(request.params.name);
+    headers := [];
+    headers.("Content-Type") = "application/json";
+
+    match result.ok {
+        false -> match result.error {
+            "not_found" -> return respond(404, headers, text_encode("{\"error\":\"not_found\"}"));
+            "internal_error" -> return respond(500, headers, text_encode("{\"error\":\"internal_error\"}"));
+            _ -> {
+                print("Unhandled error: " + str(result.error));
+                return respond(500, headers, text_encode("{\"error\":\"internal_error\"}"));
+            }
+        };
+        _ -> ();
+    };
+
+    info := result.value;
+    respond(200, headers, text_encode(json.stringify_pretty(info, 2)));
+};
+
+server.setDefaultHandler() fun(request, respond) {
+    headers := [];
+    headers.("Content-Type") = "application/json";
+    respond(404, headers, text_encode("{\"error\":\"not_found\"}"));
+};
+
+print("Listening on " + str(PORT));
+server.listen(PORT);

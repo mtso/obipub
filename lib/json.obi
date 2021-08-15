@@ -1,0 +1,388 @@
+/// Whether the table appears to be a number-indexed list.
+/// Does not support the corner case where the value at the
+/// last index is meant to be a null value, like `[null]`,
+/// which the stringify-er will turn into `{"0":null}`.
+pub fun isArray(table) {
+    return match (table.(len(table) - 1)) {
+        nil -> false;
+        _ -> true;
+    };
+}
+
+TT := [
+    LEFT_BRACE = "LEFT_BRACE",
+    RIGHT_BRACE = "RIGHT_BRACE",
+    LEFT_BRACKET = "LEFT_BRACKET",
+    RIGHT_BRACKET = "RIGHT_BRACKET",
+    COMMA = "COMMA",
+    COLON = "COLON",
+    STRING = "STRING",
+    NUMBER = "NUMBER",
+    NULL = "NULL",
+    EOF = "EOF",
+];
+
+fun scan(source) {
+    tokens := [];
+    tokenlen := 0;
+    start := 0;
+    current := 0;
+    sourcelen := strlen(source);
+
+    fun Token(type, value) {
+        return [ type = type, value = value ];
+    }
+
+    fun isAtEnd() {
+        return current >= sourcelen;
+    }
+
+    fun advance() {
+        match (isAtEnd()) {
+            true -> return Token(TT.EOF, nil);
+            _ -> ();
+        };
+        current = current + 1;
+        return strslice(source, current - 1, current);
+    }
+
+    fun peek() {
+        match (isAtEnd()) {
+            true -> return nil;
+            _ -> ();
+        };
+        return strslice(source, current, current + 1);
+    }
+
+    fun string() {
+        continue := true;
+        while() { continue and !isAtEnd(); } {
+            match (advance()) {
+                "\"" -> {
+                    continue = false;
+                }
+                "\\" -> advance();
+                _ -> ();
+            };
+        };
+        return strslice(source, start + 1, current - 1);
+    }
+
+    fun addToken(type, value) {
+        tokens.(tokenlen) = Token(type, value);
+        tokenlen = tokenlen + 1;
+    }
+
+    fun isDigit(ch) {
+        match ch {
+            "0" -> true;
+            "1" -> true;
+            "2" -> true;
+            "3" -> true;
+            "4" -> true;
+            "5" -> true;
+            "6" -> true;
+            "7" -> true;
+            "8" -> true;
+            "9" -> true;
+            _ -> false;
+        };
+    }
+    fun isDigitStart(ch) {
+        match ch {
+            "-" -> true;
+            "+" -> true;
+            _ -> isDigit(ch);
+        };
+    }
+    fun isDigitMid(ch) {
+        match ch {
+            "." -> true;
+            _ -> isDigit(ch);
+        };
+    }
+
+    fun number() {
+        continue := true;
+        // seenDot := false;
+        while() { continue and !isAtEnd(); } {
+            // ch := advance();
+            match (isDigitMid(peek())) {
+                true -> advance();
+                _ -> return continue = false;
+            };
+        };
+        return parse_float(strslice(source, start, current));
+    }
+
+    fun parseToken(char) {
+        match char {
+            "\"" -> addToken(TT.STRING, string());
+            " " -> ();
+            "\n" -> ();
+            "\t" -> ();
+            "\r" -> ();
+            "{" -> addToken(TT.LEFT_BRACE, "{");
+            "}" -> addToken(TT.RIGHT_BRACE, "}");
+            "[" -> addToken(TT.LEFT_BRACKET, "[");
+            "]" -> addToken(TT.RIGHT_BRACKET, "]");
+            "," -> addToken(TT.COMMA, ",");
+            ":" -> addToken(TT.COLON, ":");
+            "n" -> {
+                advance(); // u
+                advance(); // l
+                advance(); // l
+                addToken(TT.NULL, nil);
+            }
+            _ -> {
+                match (isDigitStart(char)) {
+                    true -> return addToken(TT.NUMBER, number());
+                    _ -> ();
+                };
+                print("Unexpected character '" + str(char) + "' at " + str(current));
+            }
+        };
+    }
+
+    while() { current < sourcelen; } {
+        start = current;
+        parseToken(advance());
+    };
+
+    addToken(TT.EOF, nil);
+
+    return tokens;
+}
+
+/// JSON value to obi value:
+/// - array -> number-indexed table
+/// - object -> table
+/// - number -> number
+/// - string -> string
+/// - null -> nil
+/// Note: dates are parsed as obi strings.
+///
+/// @param source The JSON string to parse.
+/// @returns An obi value representing the JSON value.
+pub fun parse(source) {
+    tokens := scan(source);
+    tokenlen := len(tokens);
+    current := 0;
+
+    fun isAtEnd() {
+        return current >= tokenlen;
+    }
+
+    fun advance() {
+        match (isAtEnd()) {
+            true -> return Token(TT.EOF, nil);
+            _ -> ();
+        };
+        current = current + 1;
+        return tokens.(current - 1);
+    }
+
+    fun peek() {
+        match (isAtEnd()) {
+            true -> return Token(TT.EOF, nil);
+            _ -> return tokens.(current);
+        };
+    }
+
+    fun printTokens(tokens) {
+        i := 0;
+        tlen := len(tokens);
+        while() { i < tlen; } {
+            print(str(i) + " " + str(tokens.(i)));
+            i = i + 1;
+        };
+    }
+
+    fun consume(type) {
+        match peek().type == type {
+            true -> return advance();
+            _ -> {
+                print("Expected " + str(type) + " at " + str(current) + " but got " + peek().type);
+            }
+        };
+    }
+
+    array := fun() {};
+    object := fun() {};
+
+    fun value() {
+        token := advance();
+        match token.type {
+            TT.LEFT_BRACKET -> return array();
+            TT.LEFT_BRACE -> return object();
+            TT.STRING -> return token.value;
+            TT.NUMBER -> return token.value;
+            TT.NULL -> return token.value;
+            _ -> print("Unexpected token");
+        };
+    }
+
+    array = fun() {
+        arr := [];
+        arrlen := 0;
+        continue := true;
+        while() { continue; } {
+            match peek().type == TT.STRING or
+                  peek().type == TT.NUMBER or
+                  peek().type == TT.LEFT_BRACE or
+                  peek().type == TT.LEFT_BRACKET {
+                true -> {
+                    arr.(arrlen) = value();
+                    arrlen = arrlen + 1;
+                    match peek().type == TT.COMMA {
+                        true -> advance();
+                        _ -> ();
+                    };
+                }
+                _ -> continue = false;
+            };
+        };
+        consume(TT.RIGHT_BRACKET);
+        return arr;
+    };
+
+    object = fun() {
+        obj := [];
+        continue := true;
+        while() { continue; } {
+            match peek().type == TT.RIGHT_BRACE {
+                true -> return continue = false;
+                _ -> ();
+            };
+
+            key := consume(TT.STRING);
+            colon := consume(TT.COLON);
+            obj.(key.value) = value();
+
+            match peek().type == TT.COMMA {
+                true -> advance();
+                _ -> ();
+            };
+        };
+        consume(TT.RIGHT_BRACE);
+        return obj;
+    };
+
+    return value();
+}
+
+/// @params json The value to convert into a JSON string.
+/// @returns A JSON string.
+pub fun stringify(json) {
+    match (type(json)) {
+        "table" -> {
+            match (isArray(json)) {
+                true -> {
+                    str' := "[";
+                    i := 0;
+                    jsonlen := len(json);
+                    while() { i < jsonlen; } {
+                        v := stringify(json.(i));
+                        str' = str' + v;
+                        match i + 1 >= jsonlen {
+                            false -> str' = str' + ",";
+                            _ -> ();
+                        };
+                        i = i + 1;
+                    };
+                    return str' + "]";
+                }
+                false -> {
+                    str' := "{";
+                    names := keys(json);
+                    namelen := len(names);
+                    i := 0;
+                    while() { i < namelen; } {
+                        v' := json.(names.(i));
+                        str' = str' + "\"" + str(names.(i)) + "\":" + stringify(v');
+                        match i + 1 >= namelen {
+                            false -> str' = str' + ",";
+                            _ -> ();
+                        };
+                        i = i + 1;
+                    };
+                    return str' + "}";
+                }
+                _ -> return str(json);
+            };
+        }
+        "string" -> return "\"" + json + "\"";
+        "number" -> return str(json);
+        "nil" -> return "null";
+        "array" -> return "[" + str(json) + "]";
+        "boolean" -> return str(json);
+        _ -> return "";
+    };
+}
+
+fun pad(ch, n) {
+    result := "";
+    i := 0;
+    while() { i < n; } {
+        result = result + ch;
+        i = i + 1;
+    };
+    return result;
+}
+
+pub fun stringify_pretty(json, padding) {
+    padding = padding or 2;
+
+    fun stringify_pretty'(json, padding, depth) {
+        match (type(json)) {
+            "table" -> {
+                match (isArray(json)) {
+                    true -> {
+                        str' := "[";
+                        i := 0;
+                        jsonlen := len(json);
+                        while() { i < jsonlen; } {
+                            value := stringify_pretty'(json.(i), padding, depth + 1);
+                            value_pad := pad(" ", (depth + 1) * padding);
+
+                            str' = str' + "\n" + value_pad + value;
+                            match i + 1 >= jsonlen {
+                                false -> str' = str' + ",";
+                                _ -> ();
+                            };
+                            i = i + 1;
+                        };
+                        return str' + "\n" + pad(" ", depth * padding) + "]";
+                    }
+                    false -> {
+                        brace_pad := pad(" ", depth * padding);
+                        value_pad := pad(" ", (depth + 1) * padding);
+                        str' := "{";
+                        names := keys(json);
+                        namelen := len(names);
+                        i := 0;
+                        while() { i < namelen; } {
+                            v' := json.(names.(i));
+                            str' = str' + "\n" + value_pad + "\"" + str(names.(i)) + "\": " + stringify_pretty'(v', padding, depth + 1);
+                            match i + 1 >= namelen {
+                                false -> str' = str' + ",";
+                                _ -> ();
+                            };
+                            i = i + 1;
+                        };
+                        return str' + "\n" + brace_pad + "}";
+                    }
+                    _ -> return str(json);
+                };
+            }
+            "string" -> return "\"" + json + "\"";
+            "number" -> return str(json);
+            "nil" -> return "null";
+            "array" -> return "[" + str(json) + "]";
+            "boolean" -> return str(json);
+            _ -> return "";
+        };
+    }
+
+    return stringify_pretty'(json, padding, 0);
+}
